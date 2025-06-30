@@ -3,6 +3,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { MapNgii } from '@/components/map';
 import { GisWindMap } from '@/components/ais/contents/gis-wind-map';
+import { GisWindMapTest } from '@/components/ais/contents/gis-wind-map-test';
 
 function App() {
   return (
@@ -15,6 +16,16 @@ function App() {
               <div className="w-screen h-screen">
                 <MapNgii id="gisWindMap">
                   <GisWindMap mapId="gisWindMap" />
+                </MapNgii>
+              </div>
+            }
+          />
+          <Route
+            path="/test"
+            element={
+              <div className="w-screen h-screen">
+                <MapNgii id="gisWindMapTest">
+                  <GisWindMapTest mapId="gisWindMapTest" />
                 </MapNgii>
               </div>
             }

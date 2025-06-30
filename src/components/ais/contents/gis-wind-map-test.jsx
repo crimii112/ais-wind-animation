@@ -6,23 +6,23 @@ import { WindLayer } from 'ol-wind';
 import HeatmapLayer from 'ol/layer/Heatmap';
 import VectorSource from 'ol/source/Vector';
 import { Feature } from 'ol';
-import { transform } from 'ol/proj';
+import { fromLonLat, transform } from 'ol/proj';
 import { Point } from 'ol/geom';
 
 import MapContext from '@/components/map/MapContext';
 import { Input, Button, GridWrapper } from '@/components/ui/common';
 import { Select, Option } from '@/components/ui/select-box';
 
-const GisWindMap = ({ SetMap, mapId }) => {
+const GisWindMapTest = ({ SetMap, mapId }) => {
   const map = useContext(MapContext);
 
-  const FIXED_GEOGRAPHIC_RADIUS_METERS = 12000; // 지리적 반경(m 단위)
+  const FIXED_GEOGRAPHIC_RADIUS_METERS = 30000; // 지리적 반경(m 단위)
   const heatmapSource = new VectorSource({ wrapX: false });
   const heatmapLayer = new HeatmapLayer({
     source: heatmapSource,
     id: 'heatmap',
     zIndex: 500,
-    opacity: 0.8, // 히트맵 투명도
+    opacity: 0.6, // 히트맵 투명도
     radius: 25, // 히트맵 반경
     blur: 25, // 히트맵 블러 효과
     weight: f => {
@@ -34,12 +34,18 @@ const GisWindMap = ({ SetMap, mapId }) => {
   const [startWindAnimation, setStartWindAnimation] = useState(true); // 시작/정지
   const [onWindAnimation, setOnWindAnimation] = useState(true); // 켜기/끄기
 
+  const [selectedDateJson, setSelectedDateJson] = useState({
+    // api에 보낼 날짜와 시간 정보
+    date: '2025-06-25',
+    time: '00',
+  });
+
   useEffect(() => {
     if (!map.ol_uid) {
       return;
     }
 
-    map.getView().setZoom(2);
+    map.getView().setZoom(1);
     map.getView().setCenter([1005321.0, 1771271.0]);
 
     map.addLayer(heatmapLayer);
@@ -61,6 +67,7 @@ const GisWindMap = ({ SetMap, mapId }) => {
     // EPSG:5179는 m 단위 해상도
     // heatmapLayer.radius는 픽셀 단위라서 -> 지리적 거리 / 해상도로 계산
     const radiusInPixels = FIXED_GEOGRAPHIC_RADIUS_METERS / resolution;
+    console.log(resolution, radiusInPixels);
     heatmapLayer.setRadius(radiusInPixels);
     heatmapLayer.setBlur(radiusInPixels);
   };
@@ -79,11 +86,16 @@ const GisWindMap = ({ SetMap, mapId }) => {
     heatmapSource.clear();
     heatmapLayer.getSource().clear();
 
-    map.getView().setZoom(2);
+    map.getView().setZoom(1);
     map.getView().setCenter([1005321.0, 1771271.0]);
 
+    //날짜 형식 바꿔서 데이터 보내기
+    const newJson = { ...selectedDateJson };
+    const formattedDate = newJson.date.replace(/-/g, '');
+    newJson.date = formattedDate;
+
     await axios
-      .get(`${import.meta.env.VITE_WIND_API_URL}/api/wind`)
+      .post(`${import.meta.env.VITE_WIND_API_URL}/api/wind/test`, newJson)
       .then(res => res.data)
       .then(data => {
         console.log(data);
@@ -102,6 +114,7 @@ const GisWindMap = ({ SetMap, mapId }) => {
           });
           return feature;
         });
+        console.log(heatmapFeatures);
         heatmapSource.addFeatures(heatmapFeatures);
         heatmapLayer.setVisible(true);
 
@@ -110,11 +123,29 @@ const GisWindMap = ({ SetMap, mapId }) => {
           zIndex: 1000,
           projection: 'EPSG:5179',
           windOptions: {
-            velocityScale: 0.001, // 바람 속도에 따라 움직이는 속도 배율 (기본: 0.005)
-            paths: 15000, // 동시에 렌더링할 입자 수 (기본: 5000)
+            velocityScale: 0.0005, // 바람 속도에 따라 움직이는 속도 배율 (기본: 0.005)
+            paths: 5000, // 동시에 렌더링할 입자 수 (기본: 5000)
             lineWidth: 2, // 입자 선의 두께 (기본: 1)
             speedFactor: 0.5, // 입자 속도 배율 (velocityScale과 별개) (기본: 1)
-            particleAge: 100, // 입자의 수명 (기본: 60)
+            particleAge: 70, // 입자의 수명 (기본: 60)
+            // colorScale: [
+            //   // 속도에 따른 색상 배열
+            //   'rgb(36,104, 180)',
+            //   'rgb(60,157, 194)',
+            //   'rgb(128,205,193)',
+            //   'rgb(151,218,168)',
+            //   'rgb(198,231,181)',
+            //   'rgb(238,247,217)',
+            //   'rgb(255,238,159)',
+            //   'rgb(252,217,125)',
+            //   'rgb(255,182,100)',
+            //   'rgb(252,150,75)',
+            //   'rgb(250,112,52)',
+            //   'rgb(245,64,32)',
+            //   'rgb(237,45,28)',
+            //   'rgb(220,24,32)',
+            //   'rgb(180,0,35)',
+            // ],
           },
         });
 
@@ -173,10 +204,36 @@ const GisWindMap = ({ SetMap, mapId }) => {
   return (
     <Container id={mapId}>
       <div className="setting-wrapper">
+        <Input
+          type="date"
+          className="text-sm"
+          value={selectedDateJson.date}
+          onChange={e =>
+            setSelectedDateJson(prev => ({
+              ...prev,
+              date: e.target.value,
+            }))
+          }
+        />
+        <Select
+          className="text-sm"
+          defaultValue={selectedDateJson.time}
+          onChange={e =>
+            setSelectedDateJson(prev => ({
+              ...prev,
+              time: e.target.value,
+            }))
+          }
+        >
+          <Option value="00">00시</Option>
+          <Option value="06">06시</Option>
+          <Option value="12">12시</Option>
+          <Option value="18">18시</Option>
+        </Select>
         <Button className="text-sm" onClick={handleClickWindLayerBtn}>
-          바람/히트맵 그리기
+          바람 지도 그리기
         </Button>
-        {/* <GridWrapper className="grid-cols-2 gap-2">
+        <GridWrapper className="grid-cols-2 gap-2">
           <Button
             className="text-sm"
             onClick={handleClickWindLayerStartStopBtn}
@@ -186,13 +243,32 @@ const GisWindMap = ({ SetMap, mapId }) => {
           <Button className="text-sm" onClick={handleClickWindLayerOnOffBtn}>
             on/off
           </Button>
-        </GridWrapper> */}
+        </GridWrapper>
       </div>
+      {/* <div className="options-wrapper">
+        <span className="pb-1 text-center border-b-1 border-b-gray-300">
+          옵션 설정
+        </span>
+        <GridWrapper className="grid-cols-[1fr_2fr] gap-2">
+          <span className="text-sm text-center">velocityScale</span>{' '}
+        </GridWrapper>
+        <GridWrapper className="grid-cols-2 gap-2">
+          <Button
+            className="text-sm"
+            onClick={handleClickWindLayerStartStopBtn}
+          >
+            start/stop
+          </Button>
+          <Button className="text-sm" onClick={handleClickWindLayerOnOffBtn}>
+            on/off
+          </Button>
+        </GridWrapper>
+      </div> */}
     </Container>
   );
 };
 
-export { GisWindMap };
+export { GisWindMapTest };
 
 const Container = styled.div`
   width: 100%;
@@ -390,7 +466,7 @@ const Container = styled.div`
   .options-wrapper {
     position: absolute;
     top: 180px;
-    left: 40px;
+    left: 20px;
     width: 200px;
     z-index: 100;
     display: flex;
