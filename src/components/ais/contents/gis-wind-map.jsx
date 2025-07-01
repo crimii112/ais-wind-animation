@@ -10,29 +10,12 @@ import { transform } from 'ol/proj';
 import { Point } from 'ol/geom';
 
 import MapContext from '@/components/map/MapContext';
-import { Input, Button, GridWrapper } from '@/components/ui/common';
-import { Select, Option } from '@/components/ui/select-box';
+import { Button } from '@/components/ui/common';
 
 const GisWindMap = ({ SetMap, mapId }) => {
   const map = useContext(MapContext);
 
   const FIXED_GEOGRAPHIC_RADIUS_METERS = 12000; // 지리적 반경(m 단위)
-  const heatmapSource = new VectorSource({ wrapX: false });
-  const heatmapLayer = new HeatmapLayer({
-    source: heatmapSource,
-    id: 'heatmap',
-    zIndex: 500,
-    opacity: 0.8, // 히트맵 투명도
-    radius: 25, // 히트맵 반경
-    blur: 25, // 히트맵 블러 효과
-    weight: f => {
-      const weight = f.get('weight') || 0;
-      return Math.pow(weight, 2);
-    },
-  });
-
-  const [startWindAnimation, setStartWindAnimation] = useState(true); // 시작/정지
-  const [onWindAnimation, setOnWindAnimation] = useState(true); // 켜기/끄기
 
   useEffect(() => {
     if (!map.ol_uid) {
@@ -42,9 +25,6 @@ const GisWindMap = ({ SetMap, mapId }) => {
     map.getView().setZoom(2);
     map.getView().setCenter([1005321.0, 1771271.0]);
 
-    map.addLayer(heatmapLayer);
-
-    updateHeatmapRadius();
     map.getView().on('change:resolution', updateHeatmapRadius);
 
     if (SetMap) {
@@ -54,6 +34,8 @@ const GisWindMap = ({ SetMap, mapId }) => {
 
   // 히트맵 반경 업데이트 함수(해상도 변화 시 동적 재조정)
   const updateHeatmapRadius = () => {
+    if (!map) return;
+
     const view = map.getView();
     const resolution = view.getResolution();
     if (!resolution) return;
@@ -61,23 +43,29 @@ const GisWindMap = ({ SetMap, mapId }) => {
     // EPSG:5179는 m 단위 해상도
     // heatmapLayer.radius는 픽셀 단위라서 -> 지리적 거리 / 해상도로 계산
     const radiusInPixels = FIXED_GEOGRAPHIC_RADIUS_METERS / resolution;
-    heatmapLayer.setRadius(radiusInPixels);
-    heatmapLayer.setBlur(radiusInPixels);
+
+    map
+      .getLayers()
+      .getArray()
+      .forEach(layer => {
+        if (layer instanceof HeatmapLayer) {
+          layer.setRadius(radiusInPixels);
+          layer.setBlur(radiusInPixels);
+        }
+      });
   };
 
-  // 바람 레이어 그리기 버튼 핸들러
+  // 바람/히트맵 그리기 버튼 핸들러
   const handleClickWindLayerBtn = async () => {
     document.body.style.cursor = 'progress';
 
+    // 기존 바람/히트맵 레이어 삭제
     const prevLayers = map.getLayers().getArray();
-    prevLayers.forEach(layer => {
-      if (layer instanceof WindLayer) {
+    [...prevLayers].forEach(layer => {
+      if (layer instanceof WindLayer || layer instanceof HeatmapLayer) {
         map.removeLayer(layer);
       }
     });
-
-    heatmapSource.clear();
-    heatmapLayer.getSource().clear();
 
     map.getView().setZoom(2);
     map.getView().setCenter([1005321.0, 1771271.0]);
@@ -88,23 +76,33 @@ const GisWindMap = ({ SetMap, mapId }) => {
       .then(data => {
         console.log(data);
 
-        const minWeight = Math.min(...data.heatmapData.map(item => item.tmp));
-        const maxWeight = Math.max(...data.heatmapData.map(item => item.tmp));
-
-        const normalize = x => (x - minWeight) / (maxWeight - minWeight);
-
-        const heatmapFeatures = data.heatmapData.map(item => {
+        // 히트맵 레이어 => heatmapData 사용
+        const heatmapAllFeatures = data.heatmapData.map(item => {
           const feature = new Feature({
             geometry: new Point(
               transform([item.lon, item.lat], 'EPSG:4326', 'EPSG:5179')
             ),
-            weight: normalize(item.tmp),
+            value: item.tmp,
           });
           return feature;
         });
-        heatmapSource.addFeatures(heatmapFeatures);
-        heatmapLayer.setVisible(true);
 
+        heatmapTmpIntervals.forEach(interval => {
+          const rangeFeatures = filterByRange(
+            heatmapAllFeatures,
+            interval.min,
+            interval.max
+          );
+
+          if (rangeFeatures.length > 0) {
+            const layer = createHeatmapLayer(rangeFeatures, interval.gradient);
+            map.addLayer(layer);
+          }
+        });
+
+        updateHeatmapRadius();
+
+        // 바람 레이어 => windData 사용
         const windLayer = new WindLayer(data.windData, {
           forceRender: true,
           zIndex: 1000,
@@ -132,43 +130,31 @@ const GisWindMap = ({ SetMap, mapId }) => {
     document.body.style.cursor = 'default';
   };
 
-  // 바람 레이어 시작/정지 버튼 핸들러
-  const handleClickWindLayerStartStopBtn = () => {
-    setStartWindAnimation(prev => !prev);
-  };
-  useEffect(() => {
-    if (!map.ol_uid) return;
+  // heatmapIntervals 범위에 맞는 features 찾기
+  function filterByRange(features, min, max) {
+    return features
+      .filter(f => {
+        const v = f.get('value');
+        return v > min && v <= max;
+      })
+      .map(f => {
+        const v = f.get('value');
+        const weight = (v - min) / (max - min);
+        f.set('weight', weight); // Heatmap weight을 고정
+        return f;
+      });
+  }
 
-    const windLayer = map
-      .getLayers()
-      .getArray()
-      .find(layer => layer instanceof WindLayer);
-
-    if (!windLayer) return;
-
-    if (startWindAnimation) {
-      windLayer.renderer_.wind.start();
-    } else {
-      windLayer.renderer_.wind.stop();
-    }
-  }, [startWindAnimation]);
-
-  // 바람 레이어 켜기/끄기 버튼 핸들러
-  const handleClickWindLayerOnOffBtn = () => {
-    setOnWindAnimation(prev => !prev);
-  };
-  useEffect(() => {
-    if (!map.ol_uid) return;
-
-    const windLayer = map
-      .getLayers()
-      .getArray()
-      .find(layer => layer instanceof WindLayer);
-
-    if (!windLayer) return;
-
-    windLayer.setVisible(onWindAnimation);
-  }, [onWindAnimation]);
+  // heatmapLayer 생성 함수
+  function createHeatmapLayer(features, gradient) {
+    return new HeatmapLayer({
+      source: new VectorSource({
+        features: features,
+      }),
+      gradient: gradient,
+      opacity: 0.7,
+    });
+  }
 
   return (
     <Container id={mapId}>
@@ -176,23 +162,75 @@ const GisWindMap = ({ SetMap, mapId }) => {
         <Button className="text-sm" onClick={handleClickWindLayerBtn}>
           바람/히트맵 그리기
         </Button>
-        {/* <GridWrapper className="grid-cols-2 gap-2">
-          <Button
-            className="text-sm"
-            onClick={handleClickWindLayerStartStopBtn}
-          >
-            start/stop
-          </Button>
-          <Button className="text-sm" onClick={handleClickWindLayerOnOffBtn}>
-            on/off
-          </Button>
-        </GridWrapper> */}
       </div>
+      <HeatmapLegend intervals={heatmapTmpIntervals} />
     </Container>
   );
 };
 
 export { GisWindMap };
+
+// TMP 범위별 색상 지정
+const heatmapTmpIntervals = [
+  {
+    min: 0,
+    max: 10,
+    gradient: [
+      'rgba(180, 210, 255, 1)', // 연파랑
+      'rgba(0, 100, 255, 1)', // 진파랑
+    ],
+  },
+  {
+    min: 10,
+    max: 20,
+    gradient: [
+      'rgba(180, 255, 180, 1)', // 연초록
+      'rgba(0, 128, 0, 1)', // 진초록
+    ],
+  },
+  {
+    min: 20,
+    max: 30,
+    gradient: [
+      'rgba(255, 245, 180, 1)', // 연노랑
+      'rgba(255, 200, 0, 1)', // 진노랑
+    ],
+  },
+  {
+    min: 30,
+    max: 40,
+    gradient: [
+      'rgba(255, 180, 180, 1)', // 연빨강
+      'rgba(200, 0, 0, 1)', // 진빨강
+    ],
+  },
+];
+
+// 히트맵 범례
+const HeatmapLegend = ({ intervals }) => {
+  return (
+    <LegendContainer>
+      <LegendTitle>TMP(°C)</LegendTitle>
+      {intervals
+        .slice()
+        .reverse()
+        .map((interval, idx) => (
+          <LegendItem key={idx}>
+            <ColorBox
+              style={{
+                background: `linear-gradient(to right, ${interval.gradient.join(
+                  ', '
+                )})`,
+              }}
+            />
+            <RangeLabel>
+              {interval.min} ~ {interval.max}
+            </RangeLabel>
+          </LegendItem>
+        ))}
+    </LegendContainer>
+  );
+};
 
 const Container = styled.div`
   width: 100%;
@@ -229,7 +267,7 @@ const Container = styled.div`
     right: 20px;
     padding: 0;
     margin: 0;
-    background: rgba(255, 255, 255, 0);
+    background: #000000;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -401,4 +439,39 @@ const Container = styled.div`
     border-radius: 5px;
     border: 1px solid #cccccc;
   }
+`;
+
+const LegendContainer = styled.div`
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  z-index: 2000;
+  padding: 15px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 5px;
+  font-family: sans-serif;
+  box-shadow: 0 2px 4px #cccccc;
+`;
+
+const LegendTitle = styled.div`
+  font-weight: bold;
+  margin-bottom: 5px;
+  font-size: 16px;
+`;
+
+const LegendItem = styled.div`
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+`;
+
+const ColorBox = styled.div`
+  width: 70px;
+  height: 16px;
+  border: 1px solid #cccccc;
+  margin-right: 6px;
+`;
+
+const RangeLabel = styled.span`
+  font-size: 14px;
 `;
