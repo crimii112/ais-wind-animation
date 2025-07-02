@@ -11,11 +11,14 @@ import { Point } from 'ol/geom';
 
 import MapContext from '@/components/map/MapContext';
 import { Button } from '@/components/ui/common';
+import { Select, Option } from '@/components/ui/select-box';
 
 const GisWindMap = ({ SetMap, mapId }) => {
   const map = useContext(MapContext);
-
   const FIXED_GEOGRAPHIC_RADIUS_METERS = 12000; // 지리적 반경(m 단위)
+
+  const [selectedOption, setSelectedOption] = useState('tmp');
+  const [visibleLegend, setVisibleLegend] = useState(false);
 
   useEffect(() => {
     if (!map.ol_uid) {
@@ -58,6 +61,7 @@ const GisWindMap = ({ SetMap, mapId }) => {
   // 바람/히트맵 그리기 버튼 핸들러
   const handleClickWindLayerBtn = async () => {
     document.body.style.cursor = 'progress';
+    setVisibleLegend(false);
 
     // 기존 바람/히트맵 레이어 삭제
     const prevLayers = map.getLayers().getArray();
@@ -71,10 +75,14 @@ const GisWindMap = ({ SetMap, mapId }) => {
     map.getView().setCenter([1005321.0, 1771271.0]);
 
     await axios
-      .get(`${import.meta.env.VITE_WIND_API_URL}/api/wind`)
+      .post(`${import.meta.env.VITE_WIND_API_URL}/api/wind`, {
+        option: selectedOption,
+      })
       .then(res => res.data)
       .then(data => {
         console.log(data);
+
+        if (!data.heatmapData) return;
 
         // 히트맵 레이어 => heatmapData 사용
         const heatmapAllFeatures = data.heatmapData.map(item => {
@@ -82,12 +90,12 @@ const GisWindMap = ({ SetMap, mapId }) => {
             geometry: new Point(
               transform([item.lon, item.lat], 'EPSG:4326', 'EPSG:5179')
             ),
-            value: item.tmp,
+            value: item.value,
           });
           return feature;
         });
 
-        heatmapTmpIntervals.forEach(interval => {
+        heatmapIntervals[`${selectedOption}`].forEach(interval => {
           const rangeFeatures = filterByRange(
             heatmapAllFeatures,
             interval.min,
@@ -101,6 +109,9 @@ const GisWindMap = ({ SetMap, mapId }) => {
         });
 
         updateHeatmapRadius();
+        setVisibleLegend(true);
+
+        if (!data.windData) return;
 
         // 바람 레이어 => windData 사용
         const windLayer = new WindLayer(data.windData, {
@@ -156,14 +167,32 @@ const GisWindMap = ({ SetMap, mapId }) => {
     });
   }
 
+  // 선택 물질 onChange 핸들러
+  const handleChangeSelectedOption = e => {
+    setVisibleLegend(false);
+    setSelectedOption(e.target.value);
+  };
+
   return (
     <Container id={mapId}>
       <div className="setting-wrapper">
+        <Select
+          className="text-sm"
+          defaultValue={selectedOption}
+          onChange={handleChangeSelectedOption}
+        >
+          <Option value="tmp">TMP</Option>
+          <Option value="o3">O3</Option>
+        </Select>
         <Button className="text-sm" onClick={handleClickWindLayerBtn}>
           바람/히트맵 그리기
         </Button>
       </div>
-      <HeatmapLegend intervals={heatmapTmpIntervals} />
+      <HeatmapLegend
+        intervals={heatmapIntervals[`${selectedOption}`]}
+        title={selectedOption}
+        visible={visibleLegend}
+      />
     </Container>
   );
 };
@@ -171,46 +200,82 @@ const GisWindMap = ({ SetMap, mapId }) => {
 export { GisWindMap };
 
 // TMP 범위별 색상 지정
-const heatmapTmpIntervals = [
-  {
-    min: 0,
-    max: 10,
-    gradient: [
-      'rgba(180, 210, 255, 1)', // 연파랑
-      'rgba(0, 100, 255, 1)', // 진파랑
-    ],
-  },
-  {
-    min: 10,
-    max: 20,
-    gradient: [
-      'rgba(180, 255, 180, 1)', // 연초록
-      'rgba(0, 128, 0, 1)', // 진초록
-    ],
-  },
-  {
-    min: 20,
-    max: 30,
-    gradient: [
-      'rgba(255, 245, 180, 1)', // 연노랑
-      'rgba(255, 200, 0, 1)', // 진노랑
-    ],
-  },
-  {
-    min: 30,
-    max: 40,
-    gradient: [
-      'rgba(255, 180, 180, 1)', // 연빨강
-      'rgba(200, 0, 0, 1)', // 진빨강
-    ],
-  },
-];
+const heatmapIntervals = {
+  tmp: [
+    {
+      min: 0,
+      max: 10,
+      gradient: [
+        'rgba(180, 210, 255, 1)', // 연파랑
+        'rgba(0, 100, 255, 1)', // 진파랑
+      ],
+    },
+    {
+      min: 10,
+      max: 20,
+      gradient: [
+        'rgba(180, 255, 180, 1)', // 연초록
+        'rgba(0, 128, 0, 1)', // 진초록
+      ],
+    },
+    {
+      min: 20,
+      max: 30,
+      gradient: [
+        'rgba(255, 245, 180, 1)', // 연노랑
+        'rgba(255, 200, 0, 1)', // 진노랑
+      ],
+    },
+    {
+      min: 30,
+      max: 40,
+      gradient: [
+        'rgba(255, 180, 180, 1)', // 연빨강
+        'rgba(200, 0, 0, 1)', // 진빨강
+      ],
+    },
+  ],
+  o3: [
+    {
+      min: 0,
+      max: 0.0301,
+      gradient: [
+        'rgba(180, 210, 255, 1)', // 연파랑
+        'rgba(0, 100, 255, 1)', // 진파랑
+      ],
+    },
+    {
+      min: 0.0301,
+      max: 0.0901,
+      gradient: [
+        'rgba(180, 255, 180, 1)', // 연초록
+        'rgba(0, 128, 0, 1)', // 진초록
+      ],
+    },
+    {
+      min: 0.0901,
+      max: 0.1501,
+      gradient: [
+        'rgba(255, 245, 180, 1)', // 연노랑
+        'rgba(255, 200, 0, 1)', // 진노랑
+      ],
+    },
+    {
+      min: 0.1501,
+      max: 0.3001,
+      gradient: [
+        'rgba(255, 180, 180, 1)', // 연빨강
+        'rgba(200, 0, 0, 1)', // 진빨강
+      ],
+    },
+  ],
+};
 
 // 히트맵 범례
-const HeatmapLegend = ({ intervals }) => {
+const HeatmapLegend = ({ intervals, title, visible }) => {
   return (
-    <LegendContainer>
-      <LegendTitle>TMP(°C)</LegendTitle>
+    <LegendContainer className={visible ? '' : 'hidden'}>
+      <LegendTitle>{title.toUpperCase()}</LegendTitle>
       {intervals
         .slice()
         .reverse()
