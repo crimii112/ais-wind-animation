@@ -190,34 +190,38 @@ const GisWindMap = ({ SetMap, mapId }) => {
           <Option value="pm10">PM10</Option>
           <Option value="pm2.5">PM2.5</Option>
         </Select>
-        <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
-          <span className="flex items-center justify-center text-sm">
-            격자 간격
-          </span>
-          <Input
-            id="wind-gap"
-            className="w-full h-fit text-sm"
-            type="number"
-            defaultValue={selectedWindGap}
-            min={1}
-            max={10}
-            onChange={e => setSelectedWindGap(e.target.value)}
-          />
-        </GridWrapper>
-        <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
-          <span className="flex items-center justify-center text-sm">
-            TSTEP
-          </span>
-          <Input
-            id="tstep"
-            className="w-full h-fit text-sm"
-            type="number"
-            defaultValue={selectedTstep}
-            min={1}
-            max={24}
-            onChange={e => setSelectedTstep(e.target.value)}
-          />
-        </GridWrapper>
+        {selectedOption !== 'tmp' && (
+          <>
+            <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
+              <span className="flex items-center justify-center text-sm">
+                격자 간격
+              </span>
+              <Input
+                id="wind-gap"
+                className="w-full h-fit text-sm"
+                type="number"
+                defaultValue={selectedWindGap}
+                min={1}
+                max={10}
+                onChange={e => setSelectedWindGap(e.target.value)}
+              />
+            </GridWrapper>
+            <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
+              <span className="flex items-center justify-center text-sm">
+                TSTEP
+              </span>
+              <Input
+                id="tstep"
+                className="w-full h-fit text-sm"
+                type="number"
+                defaultValue={selectedTstep}
+                min={1}
+                max={24}
+                onChange={e => setSelectedTstep(e.target.value)}
+              />
+            </GridWrapper>
+          </>
+        )}
         <Button className="text-sm" onClick={handleClickWindLayerBtn}>
           바람/히트맵 그리기
         </Button>
