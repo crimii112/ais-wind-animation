@@ -10,7 +10,7 @@ import { transform } from 'ol/proj';
 import { Point } from 'ol/geom';
 
 import MapContext from '@/components/map/MapContext';
-import { Button } from '@/components/ui/common';
+import { Button, GridWrapper, Input } from '@/components/ui/common';
 import { Select, Option } from '@/components/ui/select-box';
 
 const GisWindMap = ({ SetMap, mapId }) => {
@@ -18,6 +18,8 @@ const GisWindMap = ({ SetMap, mapId }) => {
   const FIXED_GEOGRAPHIC_RADIUS_METERS = 12000; // 지리적 반경(m 단위)
 
   const [selectedOption, setSelectedOption] = useState('tmp');
+  const [selectedWindGap, setSelectedWindGap] = useState(1);
+  const [selectedTstep, setSelectedTstep] = useState(1);
   const [visibleLegend, setVisibleLegend] = useState(false);
 
   useEffect(() => {
@@ -77,6 +79,8 @@ const GisWindMap = ({ SetMap, mapId }) => {
     await axios
       .post(`${import.meta.env.VITE_WIND_API_URL}/api/wind`, {
         option: selectedOption,
+        windGap: selectedWindGap,
+        tstep: selectedTstep,
       })
       .then(res => res.data)
       .then(data => {
@@ -183,7 +187,37 @@ const GisWindMap = ({ SetMap, mapId }) => {
         >
           <Option value="tmp">TMP</Option>
           <Option value="o3">O3</Option>
+          <Option value="pm10">PM10</Option>
+          <Option value="pm2.5">PM2.5</Option>
         </Select>
+        <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
+          <span className="flex items-center justify-center text-sm">
+            격자 간격
+          </span>
+          <Input
+            id="wind-gap"
+            className="w-full h-fit text-sm"
+            type="number"
+            defaultValue={selectedWindGap}
+            min={1}
+            max={10}
+            onChange={e => setSelectedWindGap(e.target.value)}
+          />
+        </GridWrapper>
+        <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
+          <span className="flex items-center justify-center text-sm">
+            TSTEP
+          </span>
+          <Input
+            id="tstep"
+            className="w-full h-fit text-sm"
+            type="number"
+            defaultValue={selectedTstep}
+            min={1}
+            max={24}
+            onChange={e => setSelectedTstep(e.target.value)}
+          />
+        </GridWrapper>
         <Button className="text-sm" onClick={handleClickWindLayerBtn}>
           바람/히트맵 그리기
         </Button>
@@ -263,6 +297,74 @@ const heatmapIntervals = {
     {
       min: 0.1501,
       max: 0.3001,
+      gradient: [
+        'rgba(255, 180, 180, 1)', // 연빨강
+        'rgba(200, 0, 0, 1)', // 진빨강
+      ],
+    },
+  ],
+  pm10: [
+    {
+      min: 0,
+      max: 31,
+      gradient: [
+        'rgba(180, 210, 255, 1)', // 연파랑
+        'rgba(0, 100, 255, 1)', // 진파랑
+      ],
+    },
+    {
+      min: 31,
+      max: 81,
+      gradient: [
+        'rgba(180, 255, 180, 1)', // 연초록
+        'rgba(0, 128, 0, 1)', // 진초록
+      ],
+    },
+    {
+      min: 81,
+      max: 151,
+      gradient: [
+        'rgba(255, 245, 180, 1)', // 연노랑
+        'rgba(255, 200, 0, 1)', // 진노랑
+      ],
+    },
+    {
+      min: 151,
+      max: 320,
+      gradient: [
+        'rgba(255, 180, 180, 1)', // 연빨강
+        'rgba(200, 0, 0, 1)', // 진빨강
+      ],
+    },
+  ],
+  'pm2.5': [
+    {
+      min: 0,
+      max: 16,
+      gradient: [
+        'rgba(180, 210, 255, 1)', // 연파랑
+        'rgba(0, 100, 255, 1)', // 진파랑
+      ],
+    },
+    {
+      min: 16,
+      max: 36,
+      gradient: [
+        'rgba(180, 255, 180, 1)', // 연초록
+        'rgba(0, 128, 0, 1)', // 진초록
+      ],
+    },
+    {
+      min: 36,
+      max: 76,
+      gradient: [
+        'rgba(255, 245, 180, 1)', // 연노랑
+        'rgba(255, 200, 0, 1)', // 진노랑
+      ],
+    },
+    {
+      min: 76,
+      max: 200,
       gradient: [
         'rgba(255, 180, 180, 1)', // 연빨강
         'rgba(200, 0, 0, 1)', // 진빨강
