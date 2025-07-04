@@ -20,7 +20,13 @@ const GisWindMap = ({ SetMap, mapId }) => {
   const [selectedOption, setSelectedOption] = useState('tmp');
   const [selectedWindGap, setSelectedWindGap] = useState(1);
   const [selectedTstep, setSelectedTstep] = useState(1);
-  const [visibleLegend, setVisibleLegend] = useState(false);
+  const [visibleLegend, setVisibleLegend] = useState(true);
+
+  const [tstepTime, setTstepTime] = useState();
+
+  // tstep 자동 증가
+  const [intervalId, setIntervalId] = useState(null);
+  const [autoPlaying, setAutoPlaying] = useState(false);
 
   useEffect(() => {
     if (!map.ol_uid) {
@@ -63,15 +69,7 @@ const GisWindMap = ({ SetMap, mapId }) => {
   // 바람/히트맵 그리기 버튼 핸들러
   const handleClickWindLayerBtn = async () => {
     document.body.style.cursor = 'progress';
-    setVisibleLegend(false);
-
-    // 기존 바람/히트맵 레이어 삭제
-    const prevLayers = map.getLayers().getArray();
-    [...prevLayers].forEach(layer => {
-      if (layer instanceof WindLayer || layer instanceof HeatmapLayer) {
-        map.removeLayer(layer);
-      }
-    });
+    // setVisibleLegend(false);
 
     map.getView().setZoom(2);
     map.getView().setCenter([1005321.0, 1771271.0]);
@@ -85,6 +83,16 @@ const GisWindMap = ({ SetMap, mapId }) => {
       .then(res => res.data)
       .then(data => {
         console.log(data);
+
+        // 기존 바람/히트맵 레이어 삭제
+        const prevLayers = map.getLayers().getArray();
+        [...prevLayers].forEach(layer => {
+          if (layer instanceof WindLayer || layer instanceof HeatmapLayer) {
+            map.removeLayer(layer);
+          }
+        });
+
+        if (data.metaData) setTstepTime(data.metaData.time);
 
         if (!data.heatmapData) return;
 
@@ -124,7 +132,7 @@ const GisWindMap = ({ SetMap, mapId }) => {
           projection: 'EPSG:5179',
           windOptions: {
             velocityScale: 0.001, // 바람 속도에 따라 움직이는 속도 배율 (기본: 0.005)
-            paths: 15000, // 동시에 렌더링할 입자 수 (기본: 5000)
+            paths: 10000, // 동시에 렌더링할 입자 수 (기본: 5000)
             lineWidth: 2, // 입자 선의 두께 (기본: 1)
             speedFactor: 0.5, // 입자 속도 배율 (velocityScale과 별개) (기본: 1)
             particleAge: 100, // 입자의 수명 (기본: 60)
@@ -134,6 +142,8 @@ const GisWindMap = ({ SetMap, mapId }) => {
         map.addLayer(windLayer);
 
         console.log(windLayer.getData());
+
+        if (selectedOption !== 'tmp' && !autoPlaying) startAutoPlay();
       })
       .catch(error => {
         console.error('Error fetching wind data:', error);
@@ -173,9 +183,56 @@ const GisWindMap = ({ SetMap, mapId }) => {
 
   // 선택 물질 onChange 핸들러
   const handleChangeSelectedOption = e => {
+    stopAutoPlay();
     setVisibleLegend(false);
     setSelectedOption(e.target.value);
   };
+
+  // 간격 설정, TSTEP 변경 시 실행 함수
+  useEffect(() => {
+    if (!map.ol_uid) return;
+
+    // windLayer나 heatmapLayer가 깔려있을 때만 데이터 불러오는 함수 실행
+    // 처음에는 바람/히트맵 그리기 버튼 눌러야함
+    const prevLayers = map.getLayers().getArray();
+    for (const layer of prevLayers) {
+      if (layer instanceof WindLayer || layer instanceof HeatmapLayer) {
+        handleClickWindLayerBtn();
+        break;
+      }
+    }
+  }, [selectedTstep]);
+
+  // tstep 자동 증가
+  const startAutoPlay = () => {
+    if (intervalId) return;
+
+    setAutoPlaying(true);
+
+    const id = setInterval(() => {
+      setSelectedTstep(prev => (prev >= 24 ? 1 : prev + 1));
+    }, 3000);
+
+    setIntervalId(id);
+  };
+
+  const stopAutoPlay = () => {
+    setAutoPlaying(false);
+
+    if (intervalId) {
+      clearInterval(intervalId);
+      setIntervalId(null);
+    }
+  };
+
+  // interval 언마운트 시 정리
+  useEffect(() => {
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [intervalId]);
 
   return (
     <Container id={mapId}>
@@ -203,7 +260,10 @@ const GisWindMap = ({ SetMap, mapId }) => {
                 defaultValue={selectedWindGap}
                 min={1}
                 max={10}
-                onChange={e => setSelectedWindGap(e.target.value)}
+                onChange={e => {
+                  setSelectedWindGap(e.target.value);
+                  stopAutoPlay();
+                }}
               />
             </GridWrapper>
             <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
@@ -214,17 +274,28 @@ const GisWindMap = ({ SetMap, mapId }) => {
                 id="tstep"
                 className="w-full h-fit text-sm"
                 type="number"
-                defaultValue={selectedTstep}
+                value={selectedTstep}
                 min={1}
                 max={24}
                 onChange={e => setSelectedTstep(e.target.value)}
               />
             </GridWrapper>
+            <div className="flex w-full items-center justify-center text-red-400 font-semibold">
+              {tstepTime && tstepTime}
+            </div>
           </>
         )}
         <Button className="text-sm" onClick={handleClickWindLayerBtn}>
           바람/히트맵 그리기
         </Button>
+        {selectedOption !== 'tmp' && (
+          <Button
+            className="text-sm"
+            onClick={autoPlaying ? stopAutoPlay : startAutoPlay}
+          >
+            {autoPlaying ? '자동재생 중지' : '자동재생 시작'}
+          </Button>
+        )}
       </div>
       <HeatmapLegend
         intervals={heatmapIntervals[`${selectedOption}`]}
