@@ -13,6 +13,10 @@ import MapContext from '@/components/map/MapContext';
 import { Input, Button, GridWrapper } from '@/components/ui/common';
 import { Select, Option } from '@/components/ui/select-box';
 
+/**
+ * - 사용자가 선택한 date, time을 기준으로 'https://nomads.ncep.noaa.gov' 데이터를 grib2 => json으로 변환하여 받아옴
+ * - 바람/히트맵(온도) 데이터와 ol-wind의 WindLayer, openlayers의 HeatmapLayer 사용하여 바람 애니메이션, 온도 히트맵 구현
+ */
 const GisWindMapTest = ({ SetMap, mapId }) => {
   const map = useContext(MapContext);
 

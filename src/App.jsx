@@ -2,8 +2,9 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { MapNgii } from '@/components/map';
-import { GisWindMap } from '@/components/ais/contents/gis-wind-map';
-import { GisWindMapTest } from '@/components/ais/contents/gis-wind-map-test';
+import { GisWindMap } from '@/components/wind/gis-wind-map';
+import { GisWindMapTest } from '@/components/wind/gis-wind-map-test';
+import { GisWindMapEarth } from '@/components/wind/gis-wind-map-earth';
 
 function App() {
   return (
@@ -26,6 +27,16 @@ function App() {
               <div className="w-screen h-screen">
                 <MapNgii id="gisWindMapTest">
                   <GisWindMapTest mapId="gisWindMapTest" />
+                </MapNgii>
+              </div>
+            }
+          />
+          <Route
+            path="/earth"
+            element={
+              <div className="w-screen h-screen">
+                <MapNgii id="gisWindMapEarth">
+                  <GisWindMapEarth mapId="gisWindMapEarth" />
                 </MapNgii>
               </div>
             }

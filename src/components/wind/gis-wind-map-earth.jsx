@@ -2,31 +2,21 @@ import { useContext, useEffect, useState } from 'react';
 import axios from 'axios';
 import styled from 'styled-components';
 
-import { WindLayer } from 'ol-wind';
-import HeatmapLayer from 'ol/layer/Heatmap';
-import VectorSource from 'ol/source/Vector';
-import { Feature } from 'ol';
-import { transform } from 'ol/proj';
-import { Point } from 'ol/geom';
-
 import MapContext from '@/components/map/MapContext';
 import { Button, GridWrapper, Input } from '@/components/ui/common';
 import { Select, Option } from '@/components/ui/select-box';
+import { WindCanvas } from '@/components/earth/projucts';
+import proj4 from 'proj4';
+import { transform } from 'ol/proj';
 
-const GisWindMap = ({ SetMap, mapId }) => {
+/**
+ * 회사 모델 파일을 netCDF => json으로 변환하여 데이터 받아옴
+ * earth.nullschool.net 오픈소스 활용하여 바람 애니메이션, tmp 오버레이 구현
+ */
+const GisWindMapEarth = ({ SetMap, mapId }) => {
   const map = useContext(MapContext);
-  const FIXED_GEOGRAPHIC_RADIUS_METERS = 12000; // 지리적 반경(m 단위)
 
-  const [selectedOption, setSelectedOption] = useState('tmp');
-  const [selectedWindGap, setSelectedWindGap] = useState(1);
-  const [selectedTstep, setSelectedTstep] = useState(1);
-  const [visibleLegend, setVisibleLegend] = useState(true);
-
-  const [tstepTime, setTstepTime] = useState();
-
-  // tstep 자동 증가
-  const [intervalId, setIntervalId] = useState(null);
-  const [autoPlaying, setAutoPlaying] = useState(false);
+  const [windData, setWindData] = useState(null);
 
   useEffect(() => {
     if (!map.ol_uid) {
@@ -36,277 +26,63 @@ const GisWindMap = ({ SetMap, mapId }) => {
     map.getView().setZoom(2);
     map.getView().setCenter([1005321.0, 1771271.0]);
 
-    map.getView().on('change:resolution', updateHeatmapRadius);
-
     if (SetMap) {
       SetMap(map);
     }
   }, [map, map.ol_uid]);
 
-  // 히트맵 반경 업데이트 함수(해상도 변화 시 동적 재조정)
-  const updateHeatmapRadius = () => {
-    if (!map) return;
-
-    const view = map.getView();
-    const resolution = view.getResolution();
-    if (!resolution) return;
-
-    // EPSG:5179는 m 단위 해상도
-    // heatmapLayer.radius는 픽셀 단위라서 -> 지리적 거리 / 해상도로 계산
-    const radiusInPixels = FIXED_GEOGRAPHIC_RADIUS_METERS / resolution;
-
-    map
-      .getLayers()
-      .getArray()
-      .forEach(layer => {
-        if (layer instanceof HeatmapLayer) {
-          layer.setRadius(radiusInPixels);
-          layer.setBlur(radiusInPixels);
-        }
-      });
-  };
-
   // 바람/히트맵 그리기 버튼 핸들러
   const handleClickWindLayerBtn = async () => {
     document.body.style.cursor = 'progress';
-    // setVisibleLegend(false);
 
     map.getView().setZoom(2);
     map.getView().setCenter([1005321.0, 1771271.0]);
 
     await axios
       .post(`${import.meta.env.VITE_WIND_API_URL}/api/wind`, {
-        option: selectedOption,
-        windGap: selectedWindGap,
-        tstep: selectedTstep,
+        option: 'tmp',
+        windGap: 1,
+        tstep: 1,
       })
       .then(res => res.data)
       .then(data => {
         console.log(data);
 
-        // 기존 바람/히트맵 레이어 삭제
-        const prevLayers = map.getLayers().getArray();
-        [...prevLayers].forEach(layer => {
-          if (layer instanceof WindLayer || layer instanceof HeatmapLayer) {
-            map.removeLayer(layer);
-          }
-        });
-
-        if (data.metaData) setTstepTime(data.metaData.time);
-
-        if (!data.heatmapData) return;
-
-        // 히트맵 레이어 => heatmapData 사용
-        const heatmapAllFeatures = data.heatmapData.map(item => {
-          const feature = new Feature({
-            geometry: new Point(
-              transform([item.lon, item.lat], 'EPSG:4326', 'EPSG:5179')
-            ),
-            value: item.value,
-          });
-          return feature;
-        });
-
-        heatmapIntervals[`${selectedOption}`].forEach(interval => {
-          const rangeFeatures = filterByRange(
-            heatmapAllFeatures,
-            interval.min,
-            interval.max
-          );
-
-          if (rangeFeatures.length > 0) {
-            const layer = createHeatmapLayer(rangeFeatures, interval.gradient);
-            map.addLayer(layer);
-          }
-        });
-
-        updateHeatmapRadius();
-        setVisibleLegend(true);
-
-        if (!data.windData) return;
-
-        // 바람 레이어 => windData 사용
-        const windLayer = new WindLayer(data.windData, {
-          forceRender: true,
-          zIndex: 1000,
-          projection: 'EPSG:5179',
-          windOptions: {
-            velocityScale: 0.001, // 바람 속도에 따라 움직이는 속도 배율 (기본: 0.005)
-            paths: 10000, // 동시에 렌더링할 입자 수 (기본: 5000)
-            lineWidth: 2, // 입자 선의 두께 (기본: 1)
-            speedFactor: 0.5, // 입자 속도 배율 (velocityScale과 별개) (기본: 1)
-            particleAge: 100, // 입자의 수명 (기본: 60)
-          },
-        });
-
-        map.addLayer(windLayer);
-
-        console.log(windLayer.getData());
-
-        if (selectedOption !== 'tmp' && !autoPlaying) startAutoPlay();
+        // 받아온 데이터로 구현
+        setWindData(data.windData);
       })
       .catch(error => {
-        console.error('Error fetching wind data:', error);
-        alert(
-          '바람 데이터를 가져오는 데 실패했습니다. 나중에 다시 시도해주세요.'
-        );
+        console.error('Error fetching data:', error);
+        alert('데이터를 가져오는 데 실패했습니다. 나중에 다시 시도해주세요.');
       });
 
     document.body.style.cursor = 'default';
   };
 
-  // heatmapIntervals 범위에 맞는 features 찾기
-  function filterByRange(features, min, max) {
-    return features
-      .filter(f => {
-        const v = f.get('value');
-        return v > min && v <= max;
-      })
-      .map(f => {
-        const v = f.get('value');
-        const weight = (v - min) / (max - min);
-        f.set('weight', weight); // Heatmap weight을 고정
-        return f;
-      });
-  }
-
-  // heatmapLayer 생성 함수
-  function createHeatmapLayer(features, gradient) {
-    return new HeatmapLayer({
-      source: new VectorSource({
-        features: features,
-      }),
-      gradient: gradient,
-      opacity: 0.7,
-    });
-  }
-
-  // 선택 물질 onChange 핸들러
-  const handleChangeSelectedOption = e => {
-    stopAutoPlay();
-    setVisibleLegend(false);
-    setSelectedOption(e.target.value);
-  };
-
-  // 간격 설정, TSTEP 변경 시 실행 함수
-  useEffect(() => {
-    if (!map.ol_uid) return;
-
-    // windLayer나 heatmapLayer가 깔려있을 때만 데이터 불러오는 함수 실행
-    // 처음에는 바람/히트맵 그리기 버튼 눌러야함
-    const prevLayers = map.getLayers().getArray();
-    for (const layer of prevLayers) {
-      if (layer instanceof WindLayer || layer instanceof HeatmapLayer) {
-        handleClickWindLayerBtn();
-        break;
-      }
-    }
-  }, [selectedTstep]);
-
-  // tstep 자동 증가
-  const startAutoPlay = () => {
-    if (intervalId) return;
-
-    setAutoPlaying(true);
-
-    const id = setInterval(() => {
-      setSelectedTstep(prev => (prev >= 24 ? 1 : prev + 1));
-    }, 3000);
-
-    setIntervalId(id);
-  };
-
-  const stopAutoPlay = () => {
-    setAutoPlaying(false);
-
-    if (intervalId) {
-      clearInterval(intervalId);
-      setIntervalId(null);
-    }
-  };
-
-  // interval 언마운트 시 정리
-  useEffect(() => {
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [intervalId]);
-
   return (
     <Container id={mapId}>
+      {windData && (
+        <WindCanvas
+          windData={windData}
+          width={map.getSize()[0]}
+          height={map.getSize()[1]}
+          toLonLat={(x, y) => {
+            const coord5179 = map.getCoordinateFromPixel([x, y]);
+            if (!coord5179) return null;
+            return transform(coord5179, 'EPSG:5179', 'EPSG:4326');
+          }}
+        />
+      )}
       <div className="setting-wrapper">
-        <Select
-          className="text-sm"
-          defaultValue={selectedOption}
-          onChange={handleChangeSelectedOption}
-        >
-          <Option value="tmp">TMP</Option>
-          <Option value="o3">O3</Option>
-          <Option value="pm10">PM10</Option>
-          <Option value="pm2.5">PM2.5</Option>
-        </Select>
-        {selectedOption !== 'tmp' && (
-          <>
-            <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
-              <span className="flex items-center justify-center text-sm">
-                격자 간격
-              </span>
-              <Input
-                id="wind-gap"
-                className="w-full h-fit text-sm"
-                type="number"
-                defaultValue={selectedWindGap}
-                min={1}
-                max={10}
-                onChange={e => {
-                  setSelectedWindGap(e.target.value);
-                  stopAutoPlay();
-                }}
-              />
-            </GridWrapper>
-            <GridWrapper className="grid-cols-[1fr_2fr] gap-1">
-              <span className="flex items-center justify-center text-sm">
-                TSTEP
-              </span>
-              <Input
-                id="tstep"
-                className="w-full h-fit text-sm"
-                type="number"
-                value={selectedTstep}
-                min={1}
-                max={24}
-                onChange={e => setSelectedTstep(e.target.value)}
-              />
-            </GridWrapper>
-            <div className="flex w-full items-center justify-center text-red-400 font-semibold">
-              {tstepTime && tstepTime}
-            </div>
-          </>
-        )}
         <Button className="text-sm" onClick={handleClickWindLayerBtn}>
-          바람/히트맵 그리기
+          WIND
         </Button>
-        {selectedOption !== 'tmp' && (
-          <Button
-            className="text-sm"
-            onClick={autoPlaying ? stopAutoPlay : startAutoPlay}
-          >
-            {autoPlaying ? '자동재생 중지' : '자동재생 시작'}
-          </Button>
-        )}
       </div>
-      <HeatmapLegend
-        intervals={heatmapIntervals[`${selectedOption}`]}
-        title={selectedOption}
-        visible={visibleLegend}
-      />
     </Container>
   );
 };
 
-export { GisWindMap };
+export { GisWindMapEarth };
 
 // TMP 범위별 색상 지정
 const heatmapIntervals = {
