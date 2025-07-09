@@ -2,12 +2,14 @@ import { useContext, useEffect, useState } from 'react';
 import axios from 'axios';
 import styled from 'styled-components';
 
+import proj4 from 'proj4';
+import { transform } from 'ol/proj';
+
 import MapContext from '@/components/map/MapContext';
 import { Button, GridWrapper, Input } from '@/components/ui/common';
 import { Select, Option } from '@/components/ui/select-box';
-import { WindCanvas } from '@/components/earth/projucts';
-import proj4 from 'proj4';
-import { transform } from 'ol/proj';
+import { WindCanvas } from '@/components/earth/wind';
+import { OverlayCanvas } from '@/components/earth/overlay';
 
 /**
  * 회사 모델 파일을 netCDF => json으로 변환하여 데이터 받아옴
@@ -62,16 +64,19 @@ const GisWindMapEarth = ({ SetMap, mapId }) => {
   return (
     <Container id={mapId}>
       {windData && (
-        <WindCanvas
-          windData={windData}
-          width={map.getSize()[0]}
-          height={map.getSize()[1]}
-          toLonLat={(x, y) => {
-            const coord5179 = map.getCoordinateFromPixel([x, y]);
-            if (!coord5179) return null;
-            return transform(coord5179, 'EPSG:5179', 'EPSG:4326');
-          }}
-        />
+        <>
+          <OverlayCanvas width={map.getSize()[0]} height={map.getSize()[1]} />
+          <WindCanvas
+            windData={windData}
+            width={map.getSize()[0]}
+            height={map.getSize()[1]}
+            toLonLat={(x, y) => {
+              const coord5179 = map.getCoordinateFromPixel([x, y]);
+              if (!coord5179) return null;
+              return transform(coord5179, 'EPSG:5179', 'EPSG:4326');
+            }}
+          />
+        </>
       )}
       <div className="setting-wrapper">
         <Button className="text-sm" onClick={handleClickWindLayerBtn}>
